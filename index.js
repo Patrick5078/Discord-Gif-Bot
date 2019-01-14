@@ -2,10 +2,16 @@ const Discord = require('discord.js');
 const client = new Discord.Client();
 const secrets = require('./secrets')
 const quotes = require('./quotes.json')
+let xpLevels = require('./xp.json')
+const fs = require('fs')
+const levelIntervals = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,100000,120000,140000,165000,192000,225000,265000,305000,355000]
+
+const bunnyId = 193729505284718592
+let advantage = 0
 
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  client.user.setActivity('Recursive self-improvement')
+  client.user.setActivity('D&D 5th Edition')
 });
 
 const sendQuote = (quote) => {
@@ -23,17 +29,44 @@ const sendQuote = (quote) => {
     }
     return embed
 }
+    
+const displayXp = (channel) => {
+    let players = []
+    for (key in xpLevels) {
+        let player = {}
+        player.name = key
+        player.value = xpLevels[key]
+        players.push(player)
+    }
+    channel.send({embed: {
+        color: 16711680,
+        fields: players
+    }})
+}
 
 const pickRandom = (array) => {
     return array[Math.floor(Math.random()*array.length)]
 }
+
+function isInt(value) {
+    return !isNaN(value) && 
+           parseInt(Number(value)) == value && 
+           !isNaN(parseInt(value, 10));
+  }
+
+function getRandomInt(min, max) {
+    min = Math.ceil(min);
+    max = Math.floor(max);
+    return Math.floor(Math.random() * (max - min + 1)) + min; //The maximum is inclusive and the minimum is inclusive 
+  }
 
 const getTimestampFromId = id => {
         return Math.round((id / 4194304) + 1420070400000);
 } 
 
 client.on('message', async msg => {
-    let content = msg.content.toLowerCase()
+    let content = msg.content
+    // let content = msg.content.toLowerCase()
     if (content[0] === '$'){
         // Get rid of the dollar
         content = content.substr(1)
@@ -149,6 +182,170 @@ client.on('message', async msg => {
                     })
                 })
                 .catch(console.error)
+        }
+    }
+    // DnD functionality
+    if (content[0] === '/'){
+        // Get rid of the slash
+        content = content.substr(1)
+        if (content.startsWith('roll')){
+
+            const contentArray = content.split(' ')
+            // Get rid of the roll
+            contentArray.shift()
+            console.log('initial split ', contentArray)
+            let totalRoll = 0
+            const newArray = contentArray.map((item) => {
+                if (item.includes('d')) {
+                    const splitRoll = item.split('d')
+                    // Here we avoid the D
+                    console.log(splitRoll)
+                    const amountOfDice = splitRoll[0];
+                    const diceInterval = parseInt(splitRoll[1]);
+                    const result = getRandomInt(1,diceInterval);
+                    totalRoll += result
+                    return result 
+                } else if (isInt(item)) {
+                    totalRoll += parseInt(item)
+                    return item
+                } else {
+                    return item
+                }
+            })
+            let returnString = newArray.join(' ')
+            if (contentArray.length > 1)
+            returnString += ` = ${totalRoll}`
+            console.log(returnString)
+            msg.channel.send({embed: {
+                color: 16711680,
+                author: {
+                    name: returnString
+                },
+            }})
+        }
+        if (content.startsWith('addxp')) {
+            if (msg.author.id != bunnyId) {
+                const addXpCommand = content
+                msg.channel.send({embed: {
+                    color: 16711680,
+                    author: {
+                        name: `"Begone mortal, you are not my master"`
+                    },
+                    description: "The minion believes you are an enemy! Psst... type '/deceive' to roll 1d100 for an attempt at deception. This might have consequences"
+                }})
+                const responseCollector = msg.channel.createMessageCollector(m => m.author.id === msg.author.id, {time: 30000})
+                return responseCollector.on('collect', message => {
+                    if (message.content === "/deceive"){
+                        let roll, firstRoll, secondRoll
+                        if (advantage){
+                            firstRoll = getRandomInt(1,100)
+                            secondRoll = getRandomInt(1,100)
+                            roll = firstRoll > secondRoll ? firstRoll : secondRoll
+                        } else {
+                            roll = getRandomInt(1,100)
+                        }
+                        msg.channel.send({embed: {
+                            color: 16711680,
+                            author: {
+                                name: secondRoll ? `${firstRoll} || ${secondRoll}` : roll
+                            },
+                        }})
+                        if (roll === 1) {
+                            msg.channel.send('A pathetic display, you shall die for your arrogance!')
+                            msg.member.kick("You rolled a natural one and was killed by the minion as a result")
+                        } else if (roll < 50) {
+                            msg.channel.send({embed: {
+                                color: 16711680,
+                                author: {
+                                    name: `'A pathetic attempt at deception, be silent mortal, i wish to hear no more from you'`
+                                },
+                                description: `The minion has silenced ${msg.author.username} for 10 min for his attempt at deception`
+                            }})
+                            msg.member.setMute(true, 'The minion silenced you for 10 minutes for your attempt at deception')
+                            setTimeout(() => {
+                                msg.member.setMute(false, 'the spell has lifted')
+                            }, 60*10)
+                        } else if (roll <= 90) {
+                            msg.channel.send("You will not fool me so easily...")
+                        } else if (roll < 100) {
+                            advantage = 1
+                            msg.channel.send({embed: {
+                                color: 16711680,
+                                author: {
+                                    name: `"Hmm... you are not my master but i like you! We should speak a little longer"`
+                                },
+                                description: `You managed to lift the mood of the minion! Rolls against it now have advantage`
+                            }})
+                        } else if (roll === 100) {
+                            for (key in xpLevels) {
+                                xpLevels[key] += 10
+                            }
+                            let players = []
+                            for (key in xpLevels) {
+                                let player = {}
+                                player.name = key
+                                player.value = `${xpLevels[key] - 10} => ${xpLevels[key]}`
+                                players.push(player)
+                            }
+                            msg.channel.send({embed: {
+                                title: "Your magic is not quite as strong as i remember... but i'll do what i can!",
+                                description: "Congratz, you managed to deceive the dragon!",
+                                color: 16711680,
+                                fields: players
+                            }})
+                            fs.writeFile('xp.json', JSON.stringify(xpLevels), 'utf8', (err) => {
+                            })
+                        }
+                        return responseCollector.stop()
+                    }
+                })
+            }
+            const contentArray = content.split(' ')
+            // Get rid of the roll
+            contentArray.shift()
+            const command = contentArray.shift()
+            const amountOfXp = contentArray[0]
+            if (command === 'all') {
+                for (key in xpLevels) {
+                    xpLevels[key] += parseInt(amountOfXp)
+                }
+                console.log(xpLevels)
+                fs.writeFile('xp.json', JSON.stringify(xpLevels), 'utf8', (err) => {
+                    console.log(xpLevels)
+                    let players = []
+                    for (key in xpLevels) {
+                        let player = {}
+                        player.name = key
+                        player.value = `${xpLevels[key] - parseInt(amountOfXp)} => ${xpLevels[key]}`
+                        players.push(player)
+                    }
+                    msg.channel.send({embed: {
+                        color: 16711680,
+                        fields: players
+                    }})
+                })
+            } else {
+                // Command is a player name in this case
+                if (!xpLevels[command]) {
+                    return msg.channel.send("Player or command not found!")
+                }
+                xpLevels[command] += parseInt(amountOfXp)
+                let players = []
+                let player = {}
+                player.name = command
+                player.value = `${xpLevels[command] - parseInt(amountOfXp)} => ${xpLevels[command]}`
+                players.push(player)
+                msg.channel.send({embed: {
+                    color: 16711680,
+                    fields: players
+                }})
+                fs.writeFile('xp.json', JSON.stringify(xpLevels), 'utf8', (err) => {
+                    console.log(xpLevels)
+                })
+            }
+        }
+        if (content.startsWith('displayxp')) {
+            displayXp(msg.channel)
         }
     }
     return

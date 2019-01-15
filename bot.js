@@ -5,13 +5,19 @@ const quotes = require('./quotes.json')
 let xpLevels = require('./xp.json')
 const fs = require('fs')
 const levelIntervals = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,100000,120000,140000,165000,192000,225000,265000,305000,355000]
+const sqlite3 = require("sqlite3").verbose()
+const db = new sqlite3.Database('./db.db')
+
 
 const bunnyId = 193729505284718592
+
+                    // Mig | Ask
+const animeAdmins = [193729505284718592, 197726509966950400]
 let advantage = 0
 
 client.on('ready', () => {
   console.log(`Logged in as ${client.user.tag}!`);
-  client.user.setActivity('D&D 5th Edition')
+  client.user.setActivity('TPN Opening')
 });
 
 const sendQuote = (quote) => {
@@ -61,7 +67,7 @@ function getRandomInt(min, max) {
   }
 
 const getTimestampFromId = id => {
-        return Math.round((id / 4194304) + 1420070400000);
+    return Math.round((id / 4194304) + 1420070400000);
 } 
 
 client.on('message', async msg => {
@@ -88,101 +94,211 @@ client.on('message', async msg => {
         }
     }
     if (content[0] === '!'){
-        // Get rid of the dollar
+        // Get rid of the Exclamation mark
         content = content.substr(1)
-        if (content === 'banish'){
-            msg.channel.send('Identifying normies...')
-            const latestAcceptableMessage = +new Date()-1000*3600*24*30
-            let activeUsers = []
-            let activeUserNames = []
-            try {
-                // Get messages
-                // Fetch guild members
-                let allMessages = []
-                let messageSize = 100
-                let firstIteration = true
-                let messagesArray, latestMessageId
-                let latestMessageTime = null
-                while(messageSize === 100 && (latestMessageTime > latestAcceptableMessage || latestMessageTime === null)){
-                    let messages;
-                    if (firstIteration) {
-                        messages = await msg.channel.fetchMessages({limit : 100})
-                        firstIteration = false
-                    } else {
-                        messages = await msg.channel.fetchMessages({limit: 100, before: latestMessageId})
-                    }
-                    messagesArray = Array.from(messages.values())
-                    latestMessageId = messagesArray[messagesArray.length-1].id
-                    messagesArray.forEach((message) => {
-                        if (getTimestampFromId(message.id) < latestAcceptableMessage){
-                            return false
-                        }
-                        if (!activeUsers.includes(message.author.id)){
-                            activeUsers.push(message.author.id)
-                            activeUserNames.push(message.author.username)
-                        }
-                        allMessages.push(message)
-                    })
-                    messageSize = messages.size
-                    console.log(messageSize)
-                    latestMessageTime = getTimestampFromId(latestMessageId)
+        const contentArray = content.split(" ")
+        if (content === "categories") {
+            return db.all("SELECT type type, url url FROM gifs", [], (err,results) => {
+                if (err) {
+                    console.log(err)
                 }
-                console.log(activeUserNames)
-                } catch (e) {
-                    console.log("Error "+e)
-                }
-                msg.channel.guild.fetchMembers()
-                .then((members) => {
-                    const memberArray = Array.from(members.members.values())
-                    let inactiveUser = []
-                    let membersToBeKicked = []
-                    let deletedUsersString = ''
-                    memberArray.forEach((member) => {
-                        if (!member.user.bot) {
-                            if (!activeUsers.includes(member.user.id)){
-                                membersToBeKicked.push(member)
-                                deletedUsersString += ` ${member.user.username} |`
-                            }
+                if (results[0]){
+                    console.log('results ', results)
+                    let categories = {}
+                    results.forEach((row) => {
+                        const type = row.type
+                        if (!Number.isInteger(categories[type])){
+                            categories[type] = 1
+                        } else {
+                            categories[type] = categories[type] + 1
                         }
                     })
-                    deletedUsersString = deletedUsersString ? deletedUsersString : 'No inactive users found'
-                    msg.channel.send({embed: {
-                        color: 16711680,
-                        description: 'Type "!yes" to confirm or "!no" to deny. This option will expire in 30 seconds',
-                        author: { 
-                            name: `YOU ARE ABOUT TO REMOVE USERS FROM THE CHANNEL`
-                        },
-                        fields: [
-                            {
-                                name: 'These users have not posted in the last month and will be removed',
-                                value: deletedUsersString
-                            }
-                        ],
-                    }})
-                    const responseCollector = msg.channel.createMessageCollector(m => m.author.id === msg.author.id, {time: 30000})
-                    responseCollector.on('collect', message => {
-                        if (message.content === '!yes'){
-                            // Kick users
-                            membersToBeKicked.forEach((member) => {
-                                member.kick('You were kicked for inactivity, sorry!')
-                            })
-                            msg.channel.send({embed: {
-                                color: 16711680,
-                                image: {
-                                    url: "https://media.giphy.com/media/bYl15kiZMNZUA/200.gif"
-                                },
-                                author: {
-                                    name: `It is done...`
-                                },
-                            }})
+                    const description = Object.keys(categories).map(item => `${item}: ${categories[item]} gif${categories[item] === 1 ? '' : 's'}`).join('\n')
+                    msg.channel.send({
+                        "embed": {
+                            "author": {
+                            "name": `List of gif categories`
+                            },
+                            description                               
                         }
-                        if (message.content === '!no'){
-                            responseCollector.stop();
-                        }
-                    })
-                })
-                .catch(console.error)
+                        })
+                } else {
+                    return msg.channel.send("Database is empty")
+                }        
+            })
         }
+        if (contentArray[0] !== "add" && contentArray.length === 1) {
+            const type = contentArray[0] 
+            return db.all("SELECT url url FROM gifs WHERE type = ?", [type], (err,results) => {
+                if (err) {
+                    console.log(err)
+                }
+                if (results[0]){
+                    return msg.channel.send(pickRandom(results).url)
+                } else {
+                    return msg.channel.send(`No gifs found of type "${type}" | Try adding a gif with "add ${type} {{gif url}}"`)
+                }
+            })
+        }
+
+        if (contentArray[0] === "add") {
+            const type = contentArray[1];
+            const gif = contentArray[2];
+            if (gif.split('.').slice(-1).pop() !== "gif" && gif.split('.').slice(-1).pop() !== "webm") {
+                return msg.channel.send(`ERROR: gif url must end in ".gif" or "webm"`)
+            }
+            return db.all("SELECT url url FROM gifs WHERE url = ? AND type = ?", [gif, type], (err,results) => {
+                if (err) {
+                    console.log(err)
+                }
+                if (results[0]) {
+                    return msg.channel.send("Gif already exists in database under type "+type)
+                }
+                var stmt = db.prepare("INSERT INTO gifs (url, type) VALUES (?, ?)");
+                stmt.run(gif, type)
+                stmt.finalize()
+                return msg.channel.send("Gif added")
+            })
+        }
+        
+        if (contentArray[0] === "list") {
+            const type = contentArray[1];
+            if (!type) {
+                return msg.channel.send(`ERROR: The "!list" command must have a type. Example "!list cheer"`)
+            }
+            return db.all("SELECT gif_id gif_id, url url FROM gifs WHERE type = ?", [type], (err,results) => {
+                if (err) {
+                    console.log(err)
+                }
+                if (results[0]) {
+                    let fields = []
+                    for (let i =0; i < results.length; i++) {
+                        let embedObject = {
+                            name: `${results[i].gif_id}: ${results[i].url}`,
+                        }
+                        embedObject.value = results[i+1] ? `${results[i+1].gif_id}: ${results[i+1].url}` : "Empty Slot"
+                        fields.push(embedObject)
+                        i++
+                    }
+                    return msg.channel.send({
+                        "embed": {
+                          "author": {
+                            "name": `List of gifs in type "${type}"`
+                          },
+                          "fields": fields
+                        }
+                      })
+                } else {
+                    return msg.channel.send(`No gifs found for type "${type}"`)
+                }
+           })
+        }
+
+        if (contentArray[0] === "delete") {
+            if (animeAdmins.includes(parseInt(msg.author.id))) {
+                db.run('DELETE FROM gifs WHERE gif_id = ?', [contentArray[1]], (err) => {
+                    if (err){
+                        return console.log(err)
+                    }
+                    return msg.channel.send("Gif deleted")
+                })
+            } else {
+                return msg.channel.send("You do not have permission to delete gifs")
+            }
+        }
+        // if (content === 'banish'){
+        //     msg.channel.send('Identifying normies...')
+        //     const latestAcceptableMessage = +new Date()-1000*3600*24*30
+        //     let activeUsers = []
+        //     let activeUserNames = []
+        //     try {
+        //         // Get messages
+        //         // Fetch guild members
+        //         let allMessages = []
+        //         let messageSize = 100
+        //         let firstIteration = true
+        //         let messagesArray, latestMessageId
+        //         let latestMessageTime = null
+        //         while(messageSize === 100 && (latestMessageTime > latestAcceptableMessage || latestMessageTime === null)){
+        //             let messages;
+        //             if (firstIteration) {
+        //                 messages = await msg.channel.fetchMessages({limit : 100})
+        //                 firstIteration = false
+        //             } else {
+        //                 messages = await msg.channel.fetchMessages({limit: 100, before: latestMessageId})
+        //             }
+        //             messagesArray = Array.from(messages.values())
+        //             latestMessageId = messagesArray[messagesArray.length-1].id
+        //             messagesArray.forEach((message) => {
+        //                 if (getTimestampFromId(message.id) < latestAcceptableMessage){
+        //                     return false
+        //                 }
+        //                 if (!activeUsers.includes(message.author.id)){
+        //                     activeUsers.push(message.author.id)
+        //                     activeUserNames.push(message.author.username)
+        //                 }
+        //                 allMessages.push(message)
+        //             })
+        //             messageSize = messages.size
+        //             console.log(messageSize)
+        //             latestMessageTime = getTimestampFromId(latestMessageId)
+        //         }
+        //         console.log(activeUserNames)
+        //         } catch (e) {
+        //             console.log("Error "+e)
+        //         }
+        //         msg.channel.guild.fetchMembers()
+        //         .then((members) => {
+        //             const memberArray = Array.from(members.members.values())
+        //             let inactiveUser = []
+        //             let membersToBeKicked = []
+        //             let deletedUsersString = ''
+        //             memberArray.forEach((member) => {
+        //                 if (!member.user.bot) {
+        //                     if (!activeUsers.includes(member.user.id)){
+        //                         membersToBeKicked.push(member)
+        //                         deletedUsersString += ` ${member.user.username} |`
+        //                     }
+        //                 }
+        //             })
+        //             deletedUsersString = deletedUsersString ? deletedUsersString : 'No inactive users found'
+        //             msg.channel.send({embed: {
+        //                 color: 16711680,
+        //                 description: 'Type "!yes" to confirm or "!no" to deny. This option will expire in 30 seconds',
+        //                 author: { 
+        //                     name: `YOU ARE ABOUT TO REMOVE USERS FROM THE CHANNEL`
+        //                 },
+        //                 fields: [
+        //                     {
+        //                         name: 'These users have not posted in the last month and will be removed',
+        //                         value: deletedUsersString
+        //                     }
+        //                 ],
+        //             }})
+        //             const responseCollector = msg.channel.createMessageCollector(m => m.author.id === msg.author.id, {time: 30000})
+        //             responseCollector.on('collect', message => {
+        //                 if (message.content === '!yes'){
+        //                     // Kick users
+        //                     membersToBeKicked.forEach((member) => {
+        //                         member.kick('You were kicked for inactivity, sorry!')
+        //                     })
+        //                     msg.channel.send({embed: {
+        //                         color: 16711680,
+        //                         image: {
+        //                             url: "https://media.giphy.com/media/bYl15kiZMNZUA/200.gif"
+        //                         },
+        //                         author: {
+        //                             name: `It is done...`
+        //                         },
+        //                     }})
+        //                 }
+        //                 if (message.content === '!no'){
+        //                     responseCollector.stop();
+        //                 }
+        //             })
+        //         })
+        //         .catch(console.error)
+        // }
     }
     // DnD functionality
     if (content[0] === '/'){

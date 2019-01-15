@@ -8,8 +8,8 @@ const levelIntervals = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,
 const sqlite3 = require("sqlite3").verbose()
 const db = new sqlite3.Database('./db.db')
 
-
 const bunnyId = 193729505284718592
+const gifBotCommands = ['help', 'add', 'list', 'delete', 'categories', 'playid']
 
                     // Mig | Ask
 const animeAdmins = [193729505284718592, 197726509966950400]
@@ -127,20 +127,7 @@ client.on('message', async msg => {
                 }        
             })
         }
-        if (contentArray[0] !== "add" && contentArray.length === 1) {
-            const type = contentArray[0] 
-            return db.all("SELECT url url FROM gifs WHERE type = ?", [type], (err,results) => {
-                if (err) {
-                    console.log(err)
-                }
-                if (results[0]){
-                    return msg.channel.send(pickRandom(results).url)
-                } else {
-                    return msg.channel.send(`No gifs found of type "${type}" | Try adding a gif with "add ${type} {{gif url}}"`)
-                }
-            })
-        }
-
+        
         if (contentArray[0] === "add") {
             const type = contentArray[1];
             const gif = contentArray[2];
@@ -168,7 +155,7 @@ client.on('message', async msg => {
             }
             return db.all("SELECT gif_id gif_id, url url FROM gifs WHERE type = ?", [type], (err,results) => {
                 if (err) {
-                    console.log(err)
+                    return console.log(err)
                 }
                 if (results[0]) {
                     let fields = []
@@ -182,18 +169,18 @@ client.on('message', async msg => {
                     }
                     return msg.channel.send({
                         "embed": {
-                          "author": {
-                            "name": `List of gifs in type "${type}"`
-                          },
-                          "fields": fields
+                            "author": {
+                                "name": `List of gifs in type "${type}"`
+                            },
+                            "fields": fields
                         }
-                      })
+                    })
                 } else {
                     return msg.channel.send(`No gifs found for type "${type}"`)
                 }
-           })
+            })
         }
-
+        
         if (contentArray[0] === "delete") {
             if (animeAdmins.includes(parseInt(msg.author.id))) {
                 db.run('DELETE FROM gifs WHERE gif_id = ?', [contentArray[1]], (err) => {
@@ -206,27 +193,79 @@ client.on('message', async msg => {
                 return msg.channel.send("You do not have permission to delete gifs")
             }
         }
+
+        if (contentArray[0] === "playid") {
+            const id = contentArray[1]
+            if (!id) {
+                return msg.channel.send("The !playid command requires an id parameter, like so | !playid 20")
+            }
+            return db.all("SELECT url url FROM gifs WHERE gif_id = ?", [id], (err,results) => {
+                if (err) {
+                    return console.log(err)
+                }
+                if (results[0]){
+                    return msg.channel.send(results[0].url)
+                } else {
+                    return msg.channel.send(`No gif found with id ${id}. Run the !list {{category}} command to view gif ID numbers`)
+                }
+            })
+        }
+        
+        if (contentArray[0] === "help") {
+                const commmands = 
+                ["!help: Displays all commands",
+                "!{{category}}: Displays a random gif from the chosen category",
+                "!add {{category}} {{url}}: Adds a gif to the chosen category or creates a new one if category is empty. URL must end in .webm or .gif",
+                "!list {{category}}: Lists all gifs in chosen category with their respective ID-numbers",
+                "!delete {{ID-number}}: Deletes gif with chosen ID, this command is admin only",
+                "!categories: Displays the amount of gifs in all categories",
+                "!playid {{ID-number}}: Displays the gif with the chosen ID-number"
+                ].join('\n \n')
+                return msg.channel.send({
+                    "embed": {
+                        "author": {
+                        "name": `List of bot gif commands`
+                        },
+                        description: commmands                               
+                    }
+                })
+            }
+        
+        if (!gifBotCommands.includes(contentArray[0])) {
+            const type = contentArray[0] 
+            console.log("Test")
+            return db.all("SELECT url url FROM gifs WHERE type = ?", [type], (err,results) => {
+                if (err) {
+                    console.log(err)
+                }
+                if (results[0]){
+                    return msg.channel.send(pickRandom(results).url)
+                } else {
+                    return msg.channel.send(`No gifs found of type "${type}" | Try adding a gif with "add ${type} {{gif url}}"`)
+                }
+            })
+        }
         // if (content === 'banish'){
-        //     msg.channel.send('Identifying normies...')
-        //     const latestAcceptableMessage = +new Date()-1000*3600*24*30
-        //     let activeUsers = []
-        //     let activeUserNames = []
-        //     try {
-        //         // Get messages
-        //         // Fetch guild members
-        //         let allMessages = []
-        //         let messageSize = 100
-        //         let firstIteration = true
-        //         let messagesArray, latestMessageId
-        //         let latestMessageTime = null
-        //         while(messageSize === 100 && (latestMessageTime > latestAcceptableMessage || latestMessageTime === null)){
-        //             let messages;
-        //             if (firstIteration) {
-        //                 messages = await msg.channel.fetchMessages({limit : 100})
-        //                 firstIteration = false
-        //             } else {
-        //                 messages = await msg.channel.fetchMessages({limit: 100, before: latestMessageId})
-        //             }
+            //     msg.channel.send('Identifying normies...')
+            //     const latestAcceptableMessage = +new Date()-1000*3600*24*30
+            //     let activeUsers = []
+            //     let activeUserNames = []
+            //     try {
+                //         // Get messages
+                //         // Fetch guild members
+                //         let allMessages = []
+                //         let messageSize = 100
+                //         let firstIteration = true
+                //         let messagesArray, latestMessageId
+                //         let latestMessageTime = null
+                //         while(messageSize === 100 && (latestMessageTime > latestAcceptableMessage || latestMessageTime === null)){
+                    //             let messages;
+                    //             if (firstIteration) {
+                        //                 messages = await msg.channel.fetchMessages({limit : 100})
+                        //                 firstIteration = false
+                        //             } else {
+                            //                 messages = await msg.channel.fetchMessages({limit: 100, before: latestMessageId})
+                            //             }
         //             messagesArray = Array.from(messages.values())
         //             latestMessageId = messagesArray[messagesArray.length-1].id
         //             messagesArray.forEach((message) => {

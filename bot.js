@@ -570,4 +570,4 @@ client.on('message', async msg => {
 });
 
 
-client.login("NTE2MTQ3OTU1NDc2OTg3OTE1.DyBZIA.FC5H6RbRUFlQha3js_jAu8iNB1A");
+client.login(secrets.botKey);

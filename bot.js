@@ -56,7 +56,7 @@ client.on('ready', () => {
                     const {url, image_url, title_english, episodes, score, genres, rank, popularity} = results[0]
                     const genreList = genres.map(item => item.name).join(" | ")
                     const amountOfEpisodes = results[1]
-                    client.channels.get("515814719643451393").send({
+                    client.channels.get("534403971067150348").send({
                         "embed": {
                           "title" : "MyAnimeList Stats:",
                           "image" : {

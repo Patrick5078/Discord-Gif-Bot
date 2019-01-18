@@ -7,19 +7,81 @@ const fs = require('fs')
 const levelIntervals = [0,300,900,2700,6500,14000,23000,34000,48000,64000,85000,100000,120000,140000,165000,192000,225000,265000,305000,355000]
 const sqlite3 = require("sqlite3").verbose()
 const db = new sqlite3.Database('./db.db')
+const CronJob = require('cron').CronJob;
+const request = require('request')
 
 const bunnyId = 193729505284718592
 const gifBotCommands = ['help', 'add', 'list', 'delete', 'categories', 'playid']
 
-                    // Mig | Ask
+// Mig | Ask
 const animeAdmins = [193729505284718592, 197726509966950400]
 let advantage = 0
 
+
+
 client.on('ready', () => {
-  console.log(`Logged in as ${client.user.tag}!`);
-  client.user.setActivity('TPN Opening')
+    console.log(`Logged in as ${client.user.tag}!`);
+    // Cronjobs
+    client.user.setActivity('TPN Opening')
+    
+    db.all('SELECT * FROM anime', [], (err, results) => {
+        if (err){
+            return console.log(error)
+        }
+        results.forEach((row) => {
+            new CronJob(`0 0 0 * * ${row.weekday}`, () => {
+
+                const getStats = new Promise((resolve,reject) => {
+                    request(`https://api.jikan.moe/v3/anime/${row.mal_id}`, function (error, response, body) {
+                    try {
+                        body = JSON.parse(body)
+                        resolve(body)
+                    } catch (e){
+                        reject(e)
+                    }
+                    })
+                })
+                const getEpisodes = new Promise((resolve,reject) => {
+                    request(`https://api.jikan.moe/v3/anime/${row.mal_id}/episodes/`, function (error, response, body) {
+                    try {
+                        body = JSON.parse(body)
+                        resolve(body.episodes.length)
+                    } catch (e){
+                        reject(e)
+                    }
+                    })
+                })
+                
+                Promise.all([getStats, getEpisodes]).then((results) => {
+                    const {url, image_url, title_english, episodes, score, genres, rank, popularity} = results[0]
+                    const genreList = genres.map(item => item.name).join(" | ")
+                    const amountOfEpisodes = results[1]
+                    client.channels.get("515814719643451393").send({
+                        "embed": {
+                          "title" : "MyAnimeList Stats:",
+                          "image" : {
+                              url: image_url
+                          },
+                          "description": `Average Score: ${score} \n Score Rank : #${rank} \n Popularity Rank: #${popularity} \n Episodes in Season: ${episodes ? episodes: 'Unknown'}`,
+                          "url": url,
+                          "color": 4681162,
+                          "footer": {
+                          "text": genreList
+                          },
+                          "author": {
+                            "name": `${amountOfEpisodes.length ? `Episode ${amountOfEpisodes + 1} of` : ''} ${title_english} is Airing Today at ${row.cet_time}:00 CET`
+                          }
+                        }
+                      })
+                }).catch((e) => {
+                    return console.log(e)
+                })            
+            }).start()
+        })
+    })
 });
 
+// Functions
 const sendQuote = (quote) => {
     let embed = {
         embed: {
@@ -35,7 +97,7 @@ const sendQuote = (quote) => {
     }
     return embed
 }
-    
+
 const displayXp = (channel) => {
     let players = []
     for (key in xpLevels) {
@@ -71,6 +133,7 @@ const getTimestampFromId = id => {
 } 
 
 client.on('message', async msg => {
+    console.log(msg.channel.id)
     let content = msg.content
     // let content = msg.content.toLowerCase()
     if (content[0] === '$'){
@@ -507,4 +570,4 @@ client.on('message', async msg => {
 });
 
 
-client.login(secrets.botKey);
+client.login("NTE2MTQ3OTU1NDc2OTg3OTE1.DyBZIA.FC5H6RbRUFlQha3js_jAu8iNB1A");

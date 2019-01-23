@@ -3,8 +3,9 @@ global.client = new Discord.Client();
 const secrets = require('./secrets')
 const sqlite3 = require("sqlite3").verbose()
 const db = new sqlite3.Database('./gifdb.db')
-
+const imageDownloader = require('./utilities/imageDownloader')
 const gifBotCommands = ['help', 'add', 'list', 'delete', 'categories', 'playid']
+const fs = require('fs')
 
 // Functions
 
@@ -22,8 +23,6 @@ client.on('ready', () => {
 }); 
 
 client.on('message', async msg => {
-    const msgChannelId = msg.channel.id
-    console.log(msgChannelId)
     let content = msg.content
 
     if (content[0] === '!'){
@@ -32,11 +31,13 @@ client.on('message', async msg => {
         const contentArray = content.split(" ")
         
         if (content === "categories") {
-            return db.all("SELECT type type, url url FROM gifs", [], (err,results) => {
+            return db.all("SELECT type, url FROM gifs", [], (err,results) => {
                 if (err) {
                     console.log(err)
+                    return msg.channel.send("Database error while getting categories")
                 }
                 if (results[0]){
+                    msg.delete()
                     let categories = {}
                     results.forEach((row) => {
                         const type = row.type
@@ -47,7 +48,7 @@ client.on('message', async msg => {
                         }
                     })
                     const description = Object.keys(categories).map(item => `${item}: ${categories[item]} gif${categories[item] === 1 ? '' : 's'}`).join('\n')
-                    msg.channel.send({
+                    msg.author.send({
                         "embed": {
                             "author": {
                             "name": `List of gif categories`
@@ -64,20 +65,29 @@ client.on('message', async msg => {
         if (contentArray[0] === "add") {
             const type = contentArray[1];
             const gif = contentArray[2];
-            if (gif.split('.').slice(-1).pop() !== "gif" && gif.split('.').slice(-1).pop() !== "webm") {
-                return msg.channel.send(`ERROR: gif url must end in ".gif" or "webm"`)
-            }
-            return db.all("SELECT url url FROM gifs WHERE url = ? AND type = ?", [gif, type], (err,results) => {
+            return db.all("SELECT url url FROM gifs WHERE url = ? AND type = ?", [gif, type], async (err,results) => {
                 if (err) {
                     console.log(err)
+                    return msg.channel.send("There was a database error while saving the gif")
                 }
                 if (results[0]) {
                     return msg.channel.send("Gif already exists in database under type "+type)
                 }
-                var stmt = db.prepare("INSERT INTO gifs (url, type) VALUES (?, ?)");
-                stmt.run(gif, type)
+                let filename
+                try {
+                    filename = await imageDownloader(gif)
+                } catch (e) {
+                    return msg.channel.send(`${e}`)                
+                }
+                var stmt = db.prepare("INSERT INTO gifs (url, type, filename) VALUES (?, ?, ?)");
+                stmt.run(gif, type, filename)
                 stmt.finalize()
-                return msg.channel.send("Gif added")
+                db.each('SELECT COUNT(gif_id) amount_of_gifs FROM gifs', [], (err,results) => {
+                    if (results.amount_of_gifs % 25 === 0) {
+                        msg.channel.send(`${results.amount_of_gifs} gifs collected so far`)
+                    }
+                    return msg.channel.send("Gif added")
+                })
             })
         }
         
@@ -91,6 +101,7 @@ client.on('message', async msg => {
                     return console.log(err)
                 }
                 if (results[0]) {
+                    msg.delete()
                     let fields = []
                     for (let i =0; i < results.length; i++) {
                         let embedObject = {
@@ -100,7 +111,7 @@ client.on('message', async msg => {
                         fields.push(embedObject)
                         i++
                     }
-                    return msg.channel.send({
+                    return msg.author.send({
                         "embed": {
                             "author": {
                                 "name": `List of gifs in type "${type}"`
@@ -116,11 +127,24 @@ client.on('message', async msg => {
         
         if (contentArray[0] === "delete") {
             if (msg.member.hasPermission("ADMINISTRATOR")) {
-                db.run('DELETE FROM gifs WHERE gif_id = ?', [contentArray[1]], (err) => {
-                    if (err){
-                        return console.log(err)
+                const gif_id = contentArray[1]
+                return db.all('SELECT filename FROM gifs WHERE gif_id = ?', [gif_id], (err, results) => {
+                    if (err) {
+                        console.log(err)
+                        return msg.channel.send("Database error while deleting gif")
                     }
-                    return msg.channel.send("Gif deleted")
+                    if (!(results && results[0])) {
+                        return msg.channel.send(`No gif found with id ${gif_id}`)
+                    }
+                    const filename = results[0].filename
+                    db.run('DELETE FROM gifs WHERE gif_id = ?', [gif_id], (err) => {
+                        if (err){
+                            console.log(err)
+                            return msg.channel.send("Database error while deleting gif")
+                        }
+                        fs.unlinkSync(`./gifs/${filename}`)
+                        return msg.channel.send("Gif deleted")
+                    })
                 })
             } else {
                 return msg.channel.send("Only a channel admin can delete gifs")
@@ -132,12 +156,12 @@ client.on('message', async msg => {
             if (!id) {
                 return msg.channel.send("The !playid command requires an id parameter, like so | !playid 20")
             }
-            return db.all("SELECT url url FROM gifs WHERE gif_id = ?", [id], (err,results) => {
+            return db.all("SELECT filename FROM gifs WHERE gif_id = ?", [id], (err,results) => {
                 if (err) {
                     return console.log(err)
                 }
                 if (results[0]){
-                    return msg.channel.send(results[0].url)
+                    return msg.channel.send({files: [`./gifs/${results[0].filename}`]})
                 } else {
                     return msg.channel.send(`No gif found with id ${id}. Run the !list {{category}} command to view gif ID numbers`)
                 }
@@ -163,15 +187,23 @@ client.on('message', async msg => {
                     }
                 })
             }
-        
+
         if (!gifBotCommands.includes(contentArray[0])) {
             const type = contentArray[0] 
-            return db.all("SELECT url url FROM gifs WHERE type = ?", [type], (err,results) => {
+            return db.all("SELECT gif_id, filename FROM gifs WHERE type = ?", [type], (err,results) => {
                 if (err) {
                     console.log(err)
+                    return msg.channel.send("Database error while trying to get gif")
                 }
                 if (results[0]){
-                    return msg.channel.send(pickRandom(results).url)
+                        const chosenRow = pickRandom(results)
+                        return msg.channel.send({
+                            files: [`./gifs/${chosenRow.filename}`]
+                        }).catch((e) => {
+                            if (e.errno === -4058) {
+                                return msg.channel.send(`Gif exists in database, but gif file not found on server. Try deleting gif with id ${chosenRow.gif_id} and adding it again`)
+                            }
+                        })
                 } else {
                     return msg.channel.send(`No gifs found of type "${type}" | Try adding a gif with "add ${type} {{gif url}}"`)
                 }

@@ -64,8 +64,8 @@ client.on('message', async msg => {
         
         if (contentArray[0] === "add") {
             const type = contentArray[1];
-            const gif = contentArray[2];
-            return db.all("SELECT url url FROM gifs WHERE url = ? AND type = ?", [gif, type], async (err,results) => {
+            const url = contentArray[2];
+            return db.all("SELECT url url FROM gifs WHERE url = ? AND type = ?", [url, type], async (err,results) => {
                 if (err) {
                     console.log(err)
                     return msg.channel.send("There was a database error while saving the gif")
@@ -75,19 +75,23 @@ client.on('message', async msg => {
                 }
                 let filename
                 try {
-                    filename = await imageDownloader(gif)
+                    filename = await imageDownloader(url)
                 } catch (e) {
                     return msg.channel.send(`${e}`)                
                 }
-                var stmt = db.prepare("INSERT INTO gifs (url, type, filename) VALUES (?, ?, ?)");
-                stmt.run(gif, type, filename)
-                stmt.finalize()
-                db.each('SELECT COUNT(gif_id) amount_of_gifs FROM gifs', [], (err,results) => {
-                    if (results.amount_of_gifs % 25 === 0) {
-                        msg.channel.send(`${results.amount_of_gifs} gifs collected so far`)
+                db.run("INSERT INTO gifs (url, type, filename) VALUES (?, ?, ?)", [url, type, filename], function(err, results) {
+                    if (err) {
+                        console.log(err)
+                        return msg.channel.send("There was a database error while saving the gif")
                     }
-                    return msg.channel.send("Gif added")
-                })
+                    const gif_id = this.lastID
+                    db.each('SELECT COUNT(gif_id) amount_of_gifs FROM gifs', [], (err,results) => {
+                        if (results.amount_of_gifs % 25 === 0) {
+                            msg.channel.send(`${results.amount_of_gifs} gifs collected so far`)
+                        }
+                        return msg.channel.send(`Gif added with id ${gif_id}`)
+                    })
+                });
             })
         }
         
